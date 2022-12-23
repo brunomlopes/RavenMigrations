@@ -1,13 +1,14 @@
 using System;
+using System.Linq;
 using Raven.Client;
 using Raven.Client.Documents.Operations;
 using Raven.Client.Documents.Queries;
 
 namespace RavenMigrations.Migrations
 {
-    public abstract class IndexPatchMigration : Migration
+    public abstract class PatchMigration : Migration
     {
-        protected IndexPatchMigration()
+        protected PatchMigration()
         {
             IndexingTimeout = TimeSpan.FromMinutes(5);
         }
@@ -23,16 +24,8 @@ namespace RavenMigrations.Migrations
         {
             get { return new Parameters(); }
         }
-
-        protected abstract string IndexName { get; }
-
-        protected virtual IndexQuery IndexQuery
-        {
-            get
-            {
-                return new IndexQuery { Query = Query };
-            }
-        }
+        
+        protected abstract string GetIndexPartForQuery();
 
         protected TimeSpan IndexingTimeout { get; set; }
 
@@ -48,19 +41,12 @@ namespace RavenMigrations.Migrations
 
         public override void Up()
         {
-            throw new NotImplementedException("RAVENDB5: Not yet implemented correctly");
-
-            DocumentStore
-                .Operations
-                .Send(new PatchByQueryOperation(new IndexQuery()
+            DocumentStore.Operations.Send(new PatchByQueryOperation(
+                new IndexQuery
                 {
-                    //Query = $@"from index '{IndexName}'
-                    //                   update {{
-                    //                             {UpPatch}
-                    //                   }}",
-                    QueryParameters = UpPatchValues
-                },
-                    GetOperationOptions())).WaitForCompletion();
+                    Query = GetUpdateIndexQuery(UpPatch),
+                    QueryParameters = UpPatchValues,
+                }, GetOperationOptions())).WaitForCompletion();
         }
 
         public override void Down()
@@ -71,13 +57,27 @@ namespace RavenMigrations.Migrations
                 .Operations
                 .Send(new PatchByQueryOperation(new IndexQuery()
                 {
-                    //Query = $@"from index '{IndexName}'
-                    //                   update {{
-                    //                             {DownPatch}
-                    //                   }}",
+                    Query = GetUpdateIndexQuery(DownPatch),
                     QueryParameters = DownPatchValues
                 },
                     GetOperationOptions())).WaitForCompletion();
+        }
+
+        protected string GetUpdateIndexQuery(string patch)
+        {
+            var indexPartForQuery = GetIndexPartForQuery();
+            var updateQuery = $"from {indexPartForQuery}\n";
+            if (!string.IsNullOrWhiteSpace(Query))
+            {
+                // This is a shim to support lucene queries. since 'lucene' requires an indexed field name
+                // we can guess that any field on the query would be indexed.
+                // the field would be the first part of (name:Ali*), split by :
+                var field = Query.TrimStart('(', ' ').Split(':').First();
+                updateQuery += $"WHERE lucene({field}, \"{Query}\")\n";
+            }
+
+            updateQuery += $"update {{ {patch} }}";
+            return updateQuery;
         }
     }
 }

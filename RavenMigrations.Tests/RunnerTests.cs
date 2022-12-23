@@ -351,17 +351,14 @@ namespace RavenMigrations.Tests
 
         public override void Down()
         {
-            //DocumentStore.WaitForIndexing();
             var op = DocumentStore.Operations.Send(
                 new DeleteByQueryOperation<TestDocument,TestDocumentIndex>(
-                    d => true,
+                    d => d.Name == "Khalid Abuhakmeh",
                     options: new QueryOperationOptions {AllowStale = true})
                     );
 
 
             op.WaitForCompletion();
-
-            //DocumentStore.DatabaseCommands.DeleteByIndex(new TestDocumentIndex().IndexName, new IndexQuery());
         }
     }
 

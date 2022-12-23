@@ -1,8 +1,18 @@
-﻿using System;
-using Raven.Client.Documents.Indexes;
+﻿using Raven.Client.Documents.Indexes;
 
 namespace RavenMigrations.Migrations
 {
+    public abstract class IndexPatchMigration:PatchMigration
+    {
+        protected abstract string IndexName { get; }
+
+        protected override string GetIndexPartForQuery()
+        {
+            return $"index '{IndexName}'";
+        }
+
+
+    }
     public abstract class IndexPatchMigration<TIndex> : IndexPatchMigration 
         where TIndex : AbstractIndexCreationTask, new()
     {
@@ -12,21 +22,15 @@ namespace RavenMigrations.Migrations
         }
     }
 
-    public class RavenDocumentsByEntityName : AbstractIndexCreationTask
-    {
-        public override IndexDefinition CreateIndexDefinition()
-        {
-            throw new NotImplementedException(
-                "This is just a stub to be removed after implementing CollectionPatchMigration correctly");
-        }
-    }
 
-
-    public abstract class CollectionPatchMigration<T> : IndexPatchMigration<RavenDocumentsByEntityName>
+    public abstract class CollectionPatchMigration<T> : PatchMigration
     {
-        protected override string Query
+        protected override string GetIndexPartForQuery()
         {
-            get { return "Tag:" + DocumentStore.Conventions.GetCollectionName(typeof (T)); }
+            return DocumentStore.Conventions.GetCollectionName(typeof(T));
         }
+
+        // On raven 3 we would filter on Tag:, but now on 5 we filter on the `from` clause
+        protected override string Query => "";
     }
 }

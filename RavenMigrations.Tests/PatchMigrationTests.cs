@@ -8,6 +8,7 @@ using Raven.Client.Documents.Indexes;
 using Raven.Client.Documents.Operations;
 using Raven.Client.Documents.Operations.Indexes;
 using Raven.Client.Documents.Queries;
+using Raven.Client.Documents.Session;
 using Raven.TestDriver;
 using RavenMigrations.Migrations;
 using Xunit;
@@ -58,6 +59,7 @@ namespace RavenMigrations.Tests
                 Runner.Run(store, migrationCollector: collector);
                 using (var session = store.OpenSession())
                 {
+                    AssertNoErrorOnMigration(collector, session);
                     var sampleDocument = session.Load<SampleDoc>("sample-document");
                     sampleDocument.Name.Should().Be("woot patched");
                     var otherSampleDocument = session.Load<OtherSampleDoc>("other-sample-document");
@@ -109,19 +111,25 @@ namespace RavenMigrations.Tests
         public void Good_patch_via_patch_request_on_bad_data_should_cause_errors()
         {
             var collector = new AttributeBasedMigrationCollector(new DefaultMigrationResolver(),
-                () => new[] { typeof(CreateHundredDocsAndTwo), typeof(PatchDocumentNameByPatchRequest) });
+                () => new[] { typeof(CreateHundredDocsAndTwo), typeof(FailToPatchItemDueToBadPropertyName) });
 
             // for this test to really work we need a remote store 
             // so that we need to wait for completion of the patch
             using (var store = NewRemoteDocumentStore())
             {
+                using (var session = store.OpenSession())
+                {
+                    session.Store(new SampleDoc() { Name = "Some Name" });
+                    session.SaveChanges();
+                }
                 Runner.Run(store, migrationCollector: collector);
                 using (var session = store.OpenSession())
                 {
+                    WaitForUserToContinueTheTest(store);
                     var migration = collector.GetOrderedMigrations(new string[] { }).Last();
 
                     var sampleDocument = session.Load<MigrationDocument>(migration.GetMigrationId());
-                    Assert.True(sampleDocument.HasError);
+                    sampleDocument.HasError.Should().BeTrue("Migration should have an error, patch was bad");
                 }
             }
         }
@@ -166,6 +174,8 @@ namespace RavenMigrations.Tests
                 Runner.Run(store, migrationCollector: collector);
                 using (var session = store.OpenSession())
                 {
+                    AssertNoErrorOnMigration(collector, session);
+
                     session.Load<SampleDoc>("first-doc")
                         .Name.Should().Be("Ali baba patched");
                     session.Load<SampleDoc>("second-doc")
@@ -174,6 +184,17 @@ namespace RavenMigrations.Tests
                         .Name.Should().Be("Ali bebe patched");
                 }
             }
+        }
+
+        private static void AssertNoErrorOnMigration(AttributeBasedMigrationCollector collector, IDocumentSession session)
+        {
+            var migration = collector.GetOrderedMigrations(new string[] { }).Last();
+
+            var sampleDocument = session.Load<MigrationDocument>(migration.GetMigrationId());
+            sampleDocument.Should()
+                .NotBeNull("We should have a migration document with id {0}", migration.GetMigrationId());
+            sampleDocument.HasError.Should().BeFalse("Should not have an error. Error is {0}\n{1}",
+                sampleDocument?.Error?.Message, sampleDocument?.Error?.Exception?.StackTrace);
         }
 
         [Fact]
@@ -259,6 +280,7 @@ namespace RavenMigrations.Tests
     {
         public string Id { get; set; }
         public string Name { get; set; }
+        public string[] Items { get; set; }
     }
 
     internal class OtherSampleDoc
@@ -338,7 +360,7 @@ this.Name = this.Name.replace(' patched','');
         public override string UpPatch
         {
             get { return @"
-this.Name = this.Name + affix;
+this.Name = this.Name + $affix;
 "; }
         }
 
@@ -350,7 +372,7 @@ this.Name = this.Name + affix;
         public override string DownPatch
         {
             get { return @"
-this.Name = this.Name.replace(affix,'');
+this.Name = this.Name.replace($affix,'');
 "; }
         }
 
@@ -380,24 +402,16 @@ this.Name = this.Name.replace(' patched','');
     }
 
     [Migration(2)]
-    internal class PatchDocumentNameByPatchRequest : Migration
+    internal class FailToPatchItemDueToBadPropertyName : Migration
     {
         public override void Up()
         {
-            throw new NotImplementedException("RavenDb5");
-            //WaitForIndexing();
-            //DocumentStore.DatabaseCommands.UpdateByIndex(new RavenDocumentsByEntityName().IndexName,
-            //    new IndexQuery() { Query = "Tag:" + DocumentStore.Conventions.GetTypeTagName(typeof(SampleDoc)) },
-            //    new[]
-            //    {
-            //        new PatchRequest()
-            //        {
-            //            Name = "Name",
-            //            Type = PatchCommandType.Add,
-            //            Value = "This should fail"
-            //        }
-            //    })
-            //    .WaitForCompletion();
+            var result = DocumentStore.Operations.Send(new PatchByQueryOperation(
+                new IndexQuery
+                {
+                    Query = $"from '{DocumentStore.Conventions.GetCollectionName(typeof(SampleDoc))}'" +
+                            $"update {{ this.irrelevant('This should fail'); }}"
+                }, new QueryOperationOptions { RetrieveDetails = true })).WaitForCompletion();
         }
     }
 
@@ -407,7 +421,7 @@ this.Name = this.Name.replace(' patched','');
         public override string UpPatch
         {
             get { return @"
-WillBlowUp().Something();
+this.WillBlowUp().Something();
 "; }
         }
     }
