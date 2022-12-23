@@ -1,26 +1,38 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using FluentAssertions;
-using Raven.Abstractions.Data;
-using Raven.Abstractions.Extensions;
-using Raven.Abstractions.Indexing;
-using Raven.Client.Indexes;
-using Raven.Tests.Helpers;
+using Raven.Client;
+using Raven.Client.Documents;
+using Raven.Client.Documents.Indexes;
+using Raven.Client.Documents.Operations;
+using Raven.Client.Documents.Operations.Indexes;
+using Raven.Client.Documents.Queries;
+using Raven.TestDriver;
 using RavenMigrations.Migrations;
 using Xunit;
 using Task = System.Threading.Tasks.Task;
 
 namespace RavenMigrations.Tests
 {
-    public class PatchMigrationTests : RavenTestBase
+    public class PatchMigrationTests : RavenTestDriver
     {
+        private IDocumentStore NewDocumentStore()
+        {
+            return GetDocumentStore();
+        }
+
+        // I think on ravendb5 remote and non remote stores are the same, need to confirm
+        private IDocumentStore NewRemoteDocumentStore()
+        {
+            return GetDocumentStore();
+        }
+
         [Fact]
         public void Patch_runs_only_for_the_given_entity_type()
         {
             var collector = new AttributeBasedMigrationCollector(new DefaultMigrationResolver(),
-                () => new[] {typeof (CreateDocument), typeof (PatchDocument)});
+                () => new[] { typeof(CreateDocument), typeof(PatchDocument) });
 
             using (var store = NewDocumentStore())
             {
@@ -39,7 +51,7 @@ namespace RavenMigrations.Tests
         public void Can_run_patch_with_values()
         {
             var collector = new AttributeBasedMigrationCollector(new DefaultMigrationResolver(),
-                () => new[] {typeof (CreateDocument), typeof (PatchDocumentWithValues)});
+                () => new[] { typeof(CreateDocument), typeof(PatchDocumentWithValues) });
 
             using (var store = NewDocumentStore())
             {
@@ -58,14 +70,14 @@ namespace RavenMigrations.Tests
         public void Bad_patches_should_cause_errors()
         {
             var collector = new AttributeBasedMigrationCollector(new DefaultMigrationResolver(),
-                () => new[] {typeof (CreateDocument), typeof (BlowUp)});
+                () => new[] { typeof(CreateDocument), typeof(BlowUp) });
 
             using (var store = NewDocumentStore())
             {
                 Runner.Run(store, migrationCollector: collector);
                 using (var session = store.OpenSession())
                 {
-                    var migration = collector.GetOrderedMigrations(new string[] {}).Last();
+                    var migration = collector.GetOrderedMigrations(new string[] { }).Last();
 
                     var sampleDocument = session.Load<MigrationDocument>(migration.GetMigrationId());
                     Assert.True(sampleDocument.HasError);
@@ -85,14 +97,14 @@ namespace RavenMigrations.Tests
                 Runner.Run(store, migrationCollector: collector);
                 using (var session = store.OpenSession())
                 {
-                    var migration = collector.GetOrderedMigrations(new string[] {}).Last();
+                    var migration = collector.GetOrderedMigrations(new string[] { }).Last();
 
                     var sampleDocument = session.Load<MigrationDocument>(migration.GetMigrationId());
                     Assert.True(sampleDocument.HasError);
                 }
             }
-        }        
-        
+        }
+
         [Fact]
         public void Good_patch_via_patch_request_on_bad_data_should_cause_errors()
         {
@@ -106,7 +118,7 @@ namespace RavenMigrations.Tests
                 Runner.Run(store, migrationCollector: collector);
                 using (var session = store.OpenSession())
                 {
-                    var migration = collector.GetOrderedMigrations(new string[] {}).Last();
+                    var migration = collector.GetOrderedMigrations(new string[] { }).Last();
 
                     var sampleDocument = session.Load<MigrationDocument>(migration.GetMigrationId());
                     Assert.True(sampleDocument.HasError);
@@ -123,7 +135,7 @@ namespace RavenMigrations.Tests
             using (var store = NewDocumentStore())
             {
                 Runner.Run(store, migrationCollector: collector);
-                Runner.Run(store, new MigrationOptions() {Direction = Directions.Down}, collector);
+                Runner.Run(store, new MigrationOptions() { Direction = Directions.Down }, collector);
                 using (var session = store.OpenSession())
                 {
                     var sampleDocument = session.Load<SampleDoc>("sample-document");
@@ -132,8 +144,8 @@ namespace RavenMigrations.Tests
                     otherSampleDocument.Name.Should().Be("woot");
                 }
             }
-        }        
-        
+        }
+
         [Fact]
         public void Can_run_patch_on_index()
         {
@@ -145,9 +157,9 @@ namespace RavenMigrations.Tests
                 new SampleDocIndex().Execute(store);
                 using (var session = store.OpenSession())
                 {
-                    session.Store(new SampleDoc{Id = "first-doc", Name ="Ali baba"});
-                    session.Store(new SampleDoc{Id = "second-doc", Name ="Aqui baba"});
-                    session.Store(new SampleDoc{Id = "third-doc", Name ="Ali bebe"});
+                    session.Store(new SampleDoc { Id = "first-doc", Name = "Ali baba" });
+                    session.Store(new SampleDoc { Id = "second-doc", Name = "Aqui baba" });
+                    session.Store(new SampleDoc { Id = "third-doc", Name = "Ali bebe" });
                     session.SaveChanges();
                 }
 
@@ -175,7 +187,7 @@ namespace RavenMigrations.Tests
                 new SampleDocIndex().Execute(store);
                 using (var session = store.OpenSession())
                 {
-                    session.Store(new SampleDoc {Id = "first-doc", Name = "Ali baba"});
+                    session.Store(new SampleDoc { Id = "first-doc", Name = "Ali baba" });
                     session.SaveChanges();
                 }
 
@@ -212,23 +224,26 @@ namespace RavenMigrations.Tests
             {
                 new SampleDocIndex().Execute(store);
 
-                store.DatabaseCommands.Admin.StopIndexing();
+                store.Maintenance.Send(new StopIndexingOperation());
                 using (var session = store.OpenSession())
                 {
-                    session.Store(new SampleDoc {Id = "first-doc", Name = "Ali baba"});
+                    session.Store(new SampleDoc { Id = "first-doc", Name = "Ali baba" });
                     session.SaveChanges();
                 }
 
                 Task.Delay(TimeSpan.FromMilliseconds(500))
-                    .ContinueWith(t => store.DatabaseCommands.Admin.StartIndexing());
+                    .ContinueWith(t =>
+                    {
+                        store.Maintenance.Send(new StartIndexingOperation());
+                    });
 
                 Runner.Run(store, migrationCollector: collector);
 
                 using (var session = store.OpenSession())
                 {
-                    var migrationId = collector.GetOrderedMigrations(new string[] {}).Single().GetMigrationId();
+                    var migrationId = collector.GetOrderedMigrations(new string[] { }).Single().GetMigrationId();
                     var migrationDocument = session.Load<MigrationDocument>(migrationId);
-                    if(migrationDocument != null && migrationDocument.Error != null)
+                    if (migrationDocument != null && migrationDocument.Error != null)
                     {
                         Assert.Null(migrationDocument.Error.Message);
                     }
@@ -257,11 +272,11 @@ namespace RavenMigrations.Tests
         public SampleDocIndex()
         {
             Map = docs => from doc in docs
-                select new
-                {
-                    doc.Name
-                };
-            Index(doc => doc.Name, FieldIndexing.Analyzed);
+                          select new
+                          {
+                              doc.Name
+                          };
+            Index(doc => doc.Name, FieldIndexing.Search);
         }
     }
 
@@ -272,13 +287,13 @@ namespace RavenMigrations.Tests
         {
             using (var session = DocumentStore.OpenSession())
             {
-                session.Store(new SampleDoc {Id = "sample-document", Name = "woot"});
-                session.Store(new OtherSampleDoc {Id = "other-sample-document", Name = "woot"});
+                session.Store(new SampleDoc { Id = "sample-document", Name = "woot" });
+                session.Store(new OtherSampleDoc { Id = "other-sample-document", Name = "woot" });
                 session.SaveChanges();
             }
         }
     }
-    
+
     [Migration(1)]
     internal class CreateHundredDocsAndTwo : Migration
     {
@@ -286,12 +301,14 @@ namespace RavenMigrations.Tests
         {
             using (var session = DocumentStore.OpenSession())
             {
-                Enumerable.Range(0, 100)
-                    .Select(i => new SampleDoc() {Id = "sample-document-" + i, Name = "doc id " + i})
-                    .ForEach(d => session.Store(d));
+                foreach (var d in Enumerable.Range(0, 100)
+                             .Select(i => new SampleDoc() { Id = "sample-document-" + i, Name = "doc id " + i }))
+                {
+                    session.Store(d);
+                }
 
-                session.Store(new SampleDoc {Id = "sample-document-no-name", Name = null});
-                session.Store(new SampleDoc {Id = "sample-document-with-name", Name = "name"});
+                session.Store(new SampleDoc { Id = "sample-document-no-name", Name = null });
+                session.Store(new SampleDoc { Id = "sample-document-with-name", Name = "name" });
                 session.SaveChanges();
             }
         }
@@ -313,8 +330,8 @@ this.Name = this.Name + ' patched';
 this.Name = this.Name.replace(' patched','');
 "; }
         }
-    }    
-    
+    }
+
     [Migration(2)]
     internal class PatchDocumentWithValues : CollectionPatchMigration<SampleDoc>
     {
@@ -325,9 +342,9 @@ this.Name = this.Name + affix;
 "; }
         }
 
-        public override Dictionary<string, object> UpPatchValues
+        public override Parameters UpPatchValues
         {
-            get { return new Dictionary<string, object> {{"affix", " patched"}}; }
+            get { return new Parameters { { "affix", " patched" } }; }
         }
 
         public override string DownPatch
@@ -338,12 +355,12 @@ this.Name = this.Name.replace(affix,'');
         }
 
 
-        public override Dictionary<string, object> DownPatchValues
+        public override Parameters DownPatchValues
         {
-            get { return new Dictionary<string, object> {{"affix", " patched"}}; }
+            get { return new Parameters { { "affix", " patched" } }; }
         }
     }
-    
+
     [Migration(2)]
     internal class PatchDocumentNameToUpper : CollectionPatchMigration<SampleDoc>
     {
@@ -360,29 +377,30 @@ this.Name = this.Name.ToUpper() + ' patched';
 this.Name = this.Name.replace(' patched','');
 "; }
         }
-    }    
-    
+    }
+
     [Migration(2)]
     internal class PatchDocumentNameByPatchRequest : Migration
     {
         public override void Up()
         {
-            WaitForIndexing();
-            DocumentStore.DatabaseCommands.UpdateByIndex(new RavenDocumentsByEntityName().IndexName,
-                new IndexQuery() {Query = "Tag:" + DocumentStore.Conventions.GetTypeTagName(typeof (SampleDoc))},
-                new[]
-                {
-                    new PatchRequest()
-                    {
-                        Name = "Name",
-                        Type = PatchCommandType.Add,
-                        Value = "This should fail"
-                    }
-                })
-                .WaitForCompletion();
+            throw new NotImplementedException("RavenDb5");
+            //WaitForIndexing();
+            //DocumentStore.DatabaseCommands.UpdateByIndex(new RavenDocumentsByEntityName().IndexName,
+            //    new IndexQuery() { Query = "Tag:" + DocumentStore.Conventions.GetTypeTagName(typeof(SampleDoc)) },
+            //    new[]
+            //    {
+            //        new PatchRequest()
+            //        {
+            //            Name = "Name",
+            //            Type = PatchCommandType.Add,
+            //            Value = "This should fail"
+            //        }
+            //    })
+            //    .WaitForCompletion();
         }
     }
-    
+
     [Migration(4)]
     internal class BlowUp : CollectionPatchMigration<SampleDoc>
     {

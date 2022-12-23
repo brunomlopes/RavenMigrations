@@ -1,16 +1,22 @@
 ﻿using System.Linq;
 using FluentAssertions;
-using Raven.Abstractions.Data;
-using Raven.Client.Indexes;
-using Raven.Tests.Helpers;
-using RavenMigrations.Extensions;
+using Raven.Client.Documents;
+using Raven.Client.Documents.Indexes;
+using Raven.Client.Documents.Operations;
+using Raven.Client.Documents.Queries;
+using Raven.TestDriver;
 using RavenMigrations.Migrations;
 using Xunit;
 
 namespace RavenMigrations.Tests
 {
-    public class RunnerTests : RavenTestBase
+    public class RunnerTests : RavenTestDriver
     {
+        private IDocumentStore NewDocumentStore()
+        {
+            return GetDocumentStore();
+        }
+
         private readonly IMigrationCollector _collector;
         public RunnerTests()
         {
@@ -345,8 +351,17 @@ namespace RavenMigrations.Tests
 
         public override void Down()
         {
-            DocumentStore.WaitForIndexing();
-            DocumentStore.DatabaseCommands.DeleteByIndex(new TestDocumentIndex().IndexName, new IndexQuery());
+            //DocumentStore.WaitForIndexing();
+            var op = DocumentStore.Operations.Send(
+                new DeleteByQueryOperation<TestDocument,TestDocumentIndex>(
+                    d => true,
+                    options: new QueryOperationOptions {AllowStale = true})
+                    );
+
+
+            op.WaitForCompletion();
+
+            //DocumentStore.DatabaseCommands.DeleteByIndex(new TestDocumentIndex().IndexName, new IndexQuery());
         }
     }
 

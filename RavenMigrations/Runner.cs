@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Reflection;
-using Raven.Client;
+using Raven.Client.Documents;
 
 namespace RavenMigrations
 {
@@ -36,7 +36,7 @@ namespace RavenMigrations
 
                 // todo: possible issue here with sharding
                 var migrationId =
-                    pair.GetMigrationId(documentStore.Conventions.IdentityPartsSeparator[0]);
+                    pair.GetMigrationId(documentStore.Conventions.IdentityPartsSeparator);
 
                 using (var session = documentStore.OpenSession())
                 {

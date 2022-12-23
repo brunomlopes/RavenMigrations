@@ -1,4 +1,5 @@
-﻿using Raven.Client.Indexes;
+﻿using System;
+using Raven.Client.Documents.Indexes;
 
 namespace RavenMigrations.Migrations
 {
@@ -11,11 +12,21 @@ namespace RavenMigrations.Migrations
         }
     }
 
+    public class RavenDocumentsByEntityName : AbstractIndexCreationTask
+    {
+        public override IndexDefinition CreateIndexDefinition()
+        {
+            throw new NotImplementedException(
+                "This is just a stub to be removed after implementing CollectionPatchMigration correctly");
+        }
+    }
+
+
     public abstract class CollectionPatchMigration<T> : IndexPatchMigration<RavenDocumentsByEntityName>
     {
         protected override string Query
         {
-            get { return "Tag:" + DocumentStore.Conventions.GetTypeTagName(typeof (T)); }
+            get { return "Tag:" + DocumentStore.Conventions.GetCollectionName(typeof (T)); }
         }
     }
 }

@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Generic;
-using Raven.Abstractions.Data;
-using RavenMigrations.Extensions;
+using Raven.Client;
+using Raven.Client.Documents.Operations;
+using Raven.Client.Documents.Queries;
 
 namespace RavenMigrations.Migrations
 {
@@ -9,19 +9,19 @@ namespace RavenMigrations.Migrations
     {
         protected IndexPatchMigration()
         {
-            IndexingTimeout = TimeSpan.FromMinutes(5); 
+            IndexingTimeout = TimeSpan.FromMinutes(5);
         }
 
         public abstract string UpPatch { get; }
 
-        public virtual Dictionary<string, object> UpPatchValues
+        public virtual Parameters UpPatchValues
         {
-            get { return new Dictionary<string, object>(); }
+            get { return new Parameters(); }
         }
         public virtual string DownPatch { get { return null; } }
-        public virtual Dictionary<string, object> DownPatchValues
+        public virtual Parameters DownPatchValues
         {
-            get { return new Dictionary<string, object>(); }
+            get { return new Parameters(); }
         }
 
         protected abstract string IndexName { get; }
@@ -30,15 +30,15 @@ namespace RavenMigrations.Migrations
         {
             get
             {
-                return new IndexQuery {Query = Query};
+                return new IndexQuery { Query = Query };
             }
         }
 
         protected TimeSpan IndexingTimeout { get; set; }
 
-        protected virtual BulkOperationOptions GetOperationOptions()
+        protected virtual QueryOperationOptions GetOperationOptions()
         {
-            return new BulkOperationOptions
+            return new QueryOperationOptions
             {
                 StaleTimeout = IndexingTimeout
             };
@@ -48,32 +48,36 @@ namespace RavenMigrations.Migrations
 
         public override void Up()
         {
-            DocumentStore.DatabaseCommands.UpdateByIndex(IndexName,
-                IndexQuery,
-                new ScriptedPatchRequest
+            throw new NotImplementedException("RAVENDB5: Not yet implemented correctly");
+
+            DocumentStore
+                .Operations
+                .Send(new PatchByQueryOperation(new IndexQuery()
                 {
-                    Script = UpPatch,
-                    Values = UpPatchValues,
+                    //Query = $@"from index '{IndexName}'
+                    //                   update {{
+                    //                             {UpPatch}
+                    //                   }}",
+                    QueryParameters = UpPatchValues
                 },
-                GetOperationOptions())
-                // by waiting for completion any error that ocurrs while the docs are being patched
-                // gets propagated up.
-                .WaitForCompletion();
+                    GetOperationOptions())).WaitForCompletion();
         }
 
         public override void Down()
         {
             if (string.IsNullOrWhiteSpace(DownPatch)) return;
-            
-            DocumentStore.DatabaseCommands.UpdateByIndex(IndexName,
-                IndexQuery,
-                new ScriptedPatchRequest
+
+            DocumentStore
+                .Operations
+                .Send(new PatchByQueryOperation(new IndexQuery()
                 {
-                    Script = DownPatch,
-                    Values = DownPatchValues,
+                    //Query = $@"from index '{IndexName}'
+                    //                   update {{
+                    //                             {DownPatch}
+                    //                   }}",
+                    QueryParameters = DownPatchValues
                 },
-                GetOperationOptions())
-                .WaitForCompletion();
+                    GetOperationOptions())).WaitForCompletion();
         }
     }
 }
