@@ -1,12 +1,11 @@
-﻿using System;
-using Raven.Client;
-using Raven.Client.Documents;
-using RavenMigrations.Extensions;
+﻿using Raven.Client.Documents;
+using RavenMigrations.Verbs;
 
 namespace RavenMigrations.Migrations
 {
     public abstract class Migration
     {
+        protected Alter Alter { get; private set; }
         public virtual void Down()
         {
         }
@@ -14,14 +13,10 @@ namespace RavenMigrations.Migrations
         public virtual void Setup(IDocumentStore documentStore)
         {
             DocumentStore = documentStore;
+            Alter = new Alter(documentStore);
         }
 
         public abstract void Up();
-
-        protected void WaitForIndexing()
-        {
-            throw new NotImplementedException("RavenDB5");
-        }
 
         protected IDocumentStore DocumentStore { get; private set; }
     }
