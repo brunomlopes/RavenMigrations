@@ -72,8 +72,11 @@ namespace RavenMigrations.Migrations
                 // This is a shim to support lucene queries. since 'lucene' requires an indexed field name
                 // we can guess that any field on the query would be indexed.
                 // the field would be the first part of (name:Ali*), split by :
-                var field = Query.TrimStart('(', ' ').Split(':').First();
-                updateQuery += $"WHERE lucene({field}, \"{Query}\")\n";
+                var splitResult = Query.TrimStart('(', ' ').Split(new char[]{':'}, 2);
+                var field = splitResult.First();
+                var value = splitResult.Last();
+
+                updateQuery += $"WHERE search({field}, \"{value}\")\n";
             }
 
             updateQuery += $"update {{ {patch} }}";
